@@ -1,39 +1,40 @@
 /*********************************************************************
-  ESP32 + ST7796U  →  Digital Clock
-  Requires: TFT_eSPI (configured for ST7796U 8-bit parallel)
-  Features: NTP sync, 12/24h toggle, date, smooth seconds bar
+  ESP32 + ST7796U → Digital Clock
+  Requires: TFT_eSPI (configured for ST7796U 8‑bit parallel)
 *********************************************************************/
-
 #include <TFT_eSPI.h>
 #include <WiFi.h>
 #include <time.h>
 
 // ---------- USER SETTINGS ----------
-const char* ssid     = "ssid";
-const char* password = "pass";
-
-bool use24h = true;          // false → 12h AM/PM  true → 24h
+const char* ssid       = "YOUR_WIFI_SSID";
+const char* password   = "YOUR_WIFI_PASSWORD";
+bool       use24h     = true;         // false → 12h AM/PM, true → 24h
 const char* ntpServer = "pool.ntp.org";
-const long  gmtOffset_sec = 0;      // CET = UTC+0
-const int   daylightOffset_sec = 0; // CEST = UTC+0 (handled automatically)
+const long  gmtOffset_sec    = 0;      // CET = UTC+0 - add 3600 per UTC+
+const int   daylightOffset_sec = 0;    // CEST = UTC+0 (handled automatically)
 // -----------------------------------
 
 TFT_eSPI tft = TFT_eSPI();
-
 unsigned long lastSync = 0;
-const unsigned long syncInterval = 12UL * 60UL * 60UL * 1000UL; // 12 h
+const unsigned long syncInterval = 12UL * 60UL * 60UL * 1000UL; // 12 h
 
-// Font sizes (built-in)
-#define TIME_FONT   &FreeSansBold24pt7b
-#define DATE_FONT   &FreeSansBold12pt7b
-#define SEC_FONT    &FreeSansBold9pt7b
+// Font sizes (built‑in)
+#define TIME_FONT &FreeSansBold24pt7b
+#define DATE_FONT &FreeSansBold12pt7b
+#define SEC_FONT  &FreeSansBold9pt7b
 
 void setup() {
   Serial.begin(115200);
-
   tft.begin();
-  tft.setRotation(1);               // landscape
-  tft.fillScreen(TFT_BLACK);
+  tft.setRotation(1);            // landscape
+
+  // Invert the display colours (black↔white)
+  tft.invertDisplay(true);
+
+  // Set initial background as white (since we inverted)
+  tft.fillScreen(TFT_WHITE);
+  // And set default text color as black on white
   tft.setTextColor(TFT_BLACK, TFT_WHITE);
 
   connectWiFi();
@@ -46,14 +47,14 @@ void loop() {
   static unsigned long lastSec = 0;
   unsigned long now = millis();
 
-  // Sync NTP every 12 h
-  if (now - lastSync > syncInterval) {
+  // Sync NTP every 12 h
+  if ((now - lastSync) > syncInterval) {
     configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
     lastSync = now;
   }
 
   // Update once per second
-  if (now - lastSec >= 1000) {
+  if ((now - lastSec) >= 1000) {
     lastSec = now;
     updateClock();
   }
@@ -71,11 +72,13 @@ void connectWiFi() {
   }
   if (WiFi.status() == WL_CONNECTED) {
     tft.fillScreen(TFT_WHITE);
+    tft.setTextColor(TFT_BLACK, TFT_WHITE);
     tft.setCursor(10, 100);
     tft.print("WiFi OK");
     delay(800);
   } else {
     tft.fillScreen(TFT_WHITE);
+    tft.setTextColor(TFT_BLACK, TFT_WHITE);
     tft.setCursor(10, 100);
     tft.print("WiFi FAILED");
     while (true) delay(1000);
@@ -85,6 +88,7 @@ void connectWiFi() {
 void waitForNTP() {
   struct tm timeinfo;
   tft.fillScreen(TFT_WHITE);
+  tft.setTextColor(TFT_BLACK, TFT_WHITE);
   tft.setCursor(10, 100);
   tft.print("Syncing NTP...");
   int attempts = 0;
@@ -94,6 +98,7 @@ void waitForNTP() {
   }
   if (attempts >= 30) {
     tft.fillScreen(TFT_WHITE);
+    tft.setTextColor(TFT_BLACK, TFT_WHITE);
     tft.setCursor(10, 100);
     tft.print("NTP FAILED");
     while (true) delay(1000);
@@ -102,20 +107,20 @@ void waitForNTP() {
 
 void drawStaticUI() {
   tft.fillScreen(TFT_WHITE);
+  tft.setTextColor(TFT_BLACK, TFT_WHITE);
 
   // Date line (top)
-  tft.setTextDatum(TC_DATUM); // top-center
+  tft.setTextDatum(TC_DATUM);      // top‐center
   tft.setFreeFont(DATE_FONT);
   tft.drawString("DATE", tft.width()/2, 10);
 
-  // Time line (center)
+  // Time line (centre)
   tft.setFreeFont(TIME_FONT);
-  tft.setTextDatum(MC_DATUM); // middle-center
-  // placeholder
+  tft.setTextDatum(MC_DATUM);      // middle‐center
   tft.drawString("88:88", tft.width()/2, tft.height()/2 - 20);
 
   // Seconds bar (bottom)
-  tft.drawRect(20, tft.height()-50, tft.width()-40, 20, TFT_CYAN);
+  tft.drawRect(20, tft.height()-50, tft.width()-40, 20, TFT_BLUE);
 }
 
 void updateClock() {
@@ -128,14 +133,13 @@ void updateClock() {
   strftime(buf, sizeof(buf), "%a %d %b %Y", &timeinfo);
   tft.setFreeFont(DATE_FONT);
   tft.setTextDatum(TC_DATUM);
-  tft.setTextColor(TFT_YELLOW, TFT_WHITE);
+  tft.setTextColor(TFT_RED, TFT_WHITE);
   tft.drawString(buf, tft.width()/2, 40);
 
   // ---- TIME ----
   int h = timeinfo.tm_hour;
   int m = timeinfo.tm_min;
   int s = timeinfo.tm_sec;
-
   if (!use24h) {
     bool pm = (h >= 12);
     if (h > 12) h -= 12;
@@ -144,7 +148,6 @@ void updateClock() {
   } else {
     snprintf(buf, sizeof(buf), "%02d:%02d", h, m);
   }
-
   tft.setFreeFont(TIME_FONT);
   tft.setTextDatum(MC_DATUM);
   tft.setTextColor(TFT_BLACK, TFT_WHITE);
@@ -153,13 +156,16 @@ void updateClock() {
   // ---- SECONDS BAR ----
   int barW = tft.width() - 40;
   int fill = map(s, 0, 59, 0, barW);
-  tft.fillRect(20, tft.height()-50, barW, 20, TFT_WHITE); // clear
-  tft.fillRect(20, tft.height()-50, fill, 20, TFT_CYAN);
+
+  // clear bar background
+  tft.fillRect(20, tft.height()-50, barW, 20, TFT_WHITE);
+  // draw fill
+  tft.fillRect(20, tft.height()-50, fill, 20, TFT_BLUE);
 
   // optional small seconds number
   snprintf(buf, sizeof(buf), "%02d", s);
   tft.setFreeFont(SEC_FONT);
   tft.setTextDatum(MC_DATUM);
-  tft.setTextColor(TFT_CYAN, TFT_WHITE);
+  tft.setTextColor(TFT_BLUE, TFT_WHITE);
   tft.drawString(buf, tft.width()/2, tft.height()-30);
 }
